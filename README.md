@@ -3,6 +3,8 @@
 A host-based tool that **detects and remediates ARP-poisoning / MITM attacks** on a
 local network, written in Python with Scapy.
 
+> For authorized lab testing only. Run the attacker only on networks you own or have explicit permission to test.
+
 - **`defender/defender.py`** — an interactive terminal tool that scans the network,
   monitors ARP traffic live, and can pin the gateway to neutralise an attack.
   **This is the project.**
