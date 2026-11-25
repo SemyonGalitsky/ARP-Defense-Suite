@@ -1,26 +1,79 @@
-# Layer 2 Network Discovery & MITM ARP Spoofer
+# ARP Defense Suite
 
-> **EDUCATIONAL DISCLAIMER:** > This tool was developed strictly for educational purposes, authorized network auditing, and demonstrating vulnerabilities within the OSI model. Do not use this software against networks or devices you do not own or do not have explicit, written permission to test. The author assumes no liability and is not responsible for any misuse or damage caused by this program.
+A host-based tool that **detects and remediates ARP-poisoning / MITM attacks** on a
+local network, written in Python with Scapy.
 
-## Overview
-A native Linux network utility built in Python. This tool bypasses standard ICMP blocking by operating directly at Layer 2, utilizing raw Ethernet frames to dynamically map local subnets and execute a Man-in-the-Middle (MITM) ARP poisoning attack. 
+- **`defender/defender.py`** — an interactive terminal tool that scans the network,
+  monitors ARP traffic live, and can pin the gateway to neutralise an attack.
+  **This is the project.**
+- **`attacker/mitm_spoofer.py`** — a separate ARP-spoofer, included only as a test
+  harness to trigger the defender during a demo. It runs on its own.
 
-It was engineered with strict defensive programming practices, utilizing modern Python type-hinting, tuple unpacking, and error handling.
+## Folder layout
 
-## Features
-* **Dynamic Subnet Calculation:** Utilizes the native Linux `ip` suite to dynamically calculate the active IPv4 CIDR block without relying on deprecated `ifconfig` logic or hardcoded IPs.
-* **Unblockable Host Discovery:** Sends crafted `ff:ff:ff:ff:ff:ff` Ethernet broadcasts to bypass strict host firewalls (like Windows Defender) that drop standard Layer 3 ping sweeps.
-* **Targeted Interception:** Executes continuous, state-overwriting ARP replies to both a selected target and the default gateway, safely routing traffic through the attacking machine by manipulating the Linux kernel's `ip_forward` parameters.
-* **Graceful Termination:** Catches `KeyboardInterrupt` signals to automatically restore the kernel's IP forwarding state and prevent lingering network outages.
-* **Clean CLI Interface:** Features a formatted, defensively programmed command-line interface that handles empty network lists and invalid user inputs seamlessly.
+```
+ARP-Defense-Suite/
+├── defender/
+│   └── defender.py     # the whole defender - one interactive terminal file
+└── attacker/
+    └── mitm_spoofer.py  # test harness (run separately, ideally on another machine)
+```
 
-## Architecture & Dependencies
-* **Language:** Python 3
-* **Core Library:** [Scapy](https://scapy.net/) (for packet forging and network parsing)
-* **OS Compatibility:** Strictly Linux (requires `root` execution to manipulate raw network sockets and kernel parameters).
+## Setup (Windows)
 
-## Usage
-1. Clone the repository and install the required dependencies:
-   ```bash
-   sudo apt update
-   sudo apt install python3-scapy
+1. Install **Npcap** (https://npcap.com) in *WinPcap API-compatible mode* — Scapy needs
+   it to capture packets.
+2. Create a virtual environment (Python 3.10 recommended) and install Scapy:
+   ```
+   py -3.10 -m venv defender\venv
+   defender\venv\Scripts\pip install scapy
+   ```
+
+## Running it
+
+Open an **Administrator** terminal (without admin the sniffer captures nothing):
+
+```
+defender\venv\Scripts\python defender\defender.py
+```
+
+The defender auto-detects your gateway and interface, lets you confirm or change them
+(press Enter to accept a detected value), then shows a menu:
+
+```
+[1] Scan network (list devices + set baseline)
+[2] Monitor for ARP spoofing (live)
+[3] Protect gateway (pin static ARP entry)
+[4] Exit
+```
+
+All activity is also written to `arp_defender.log`.
+
+## Detection rules
+
+| Rule | Fires when |
+|---|---|
+| `GATEWAY_MAC_CHANGED` | something claims the gateway IP with a MAC that isn't the real one |
+| `MAC_CHANGED_FOR_IP`  | a known IP suddenly answers from a different MAC |
+| `ONE_MAC_MANY_IPS`    | one MAC claims more IPs than allowed (classic poisoner) |
+| `ARP_FLOOD`           | a burst of unsolicited ARP replies (secondary signal) |
+
+## Remediation
+
+**Protect gateway** writes the real gateway MAC as a *permanent* ARP entry. A permanent
+entry is immune to the attacker's spoofed replies — the OS simply ignores the flood —
+so this is the real ARP-layer fix on the host.
+
+## Demo
+
+1. Start the defender and choose **[2] Monitor**.
+2. From a separate (Linux) machine, run `attacker/mitm_spoofer.py` against this host.
+3. Watch `GATEWAY_MAC_CHANGED` fire live, then use **[3] Protect gateway** to neutralise it.
+
+## How it works
+
+The defender passively sniffs ARP with Scapy and keeps a baseline of which MAC owns
+which IP. The gateway's real MAC is the *trust anchor*: any packet claiming the gateway
+IP from a different MAC is the attack. Because standard ARP has no authentication, a
+host can't prevent spoofed replies outright — so the tool detects them and pins the
+gateway, which stops the poisoning from affecting this host.
